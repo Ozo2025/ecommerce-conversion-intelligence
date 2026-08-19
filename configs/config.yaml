@@ -1,0 +1,19 @@
+data:
+  raw_path: data/online_shoppers_intention.csv
+  target: Revenue
+  test_size: 0.20
+  random_state: 42
+
+model:
+  type: gradient_boosting
+  n_estimators: 200
+  learning_rate: 0.05
+  max_depth: 3
+
+training:
+  primary_metric: f1
+  minimum_f1: 0.40
+
+mlflow:
+  experiment_name: ecommerce_conversion
+  data_version: v1
