@@ -46,11 +46,16 @@ Natural-Language Session Description
       Conversion Probability
                 |
                 v
+        Nebius LLM Interface
+                |
+                v
  Business Summary & Recommendation
                 |
                 v
         Streamlit Interface
 ```
+
+The LLM serves two roles in the application. First, it converts natural-language session descriptions into structured model features. After the machine learning model generates a prediction, the LLM converts the prediction and supplied session information into a concise business summary and recommendation.
 
 ---
 
@@ -191,7 +196,7 @@ compare_experiments.py
 
 This script retrieves MLflow experiment results and identifies the strongest run according to F1 score.
 
-The application then loads the selected model from MLflow for prediction.
+The application loads the highest-F1 completed model from the local `ecommerce_conversion` MLflow experiment for prediction.
 
 ---
 
@@ -204,6 +209,8 @@ Model used during development:
 ```text
 nvidia/Nemotron-3_5-Lightning
 ```
+
+### Natural-Language Feature Extraction
 
 The LLM converts natural-language descriptions into the exact structured features required by the machine learning model.
 
@@ -226,6 +233,25 @@ becomes structured data such as:
 ```
 
 The extraction prompt explicitly instructs the LLM not to invent missing information.
+
+### LLM-Generated Business Response
+
+After the trained machine learning model generates a conversion prediction and probability, the LLM receives the model result and supplied structured session information.
+
+It then generates:
+
+- A concise business summary
+- A practical ecommerce or sales recommendation
+
+The response-generation prompt instructs the LLM to:
+
+- State the model's conversion probability
+- Describe the result as a model estimate rather than a guarantee
+- Refer only to supplied session information
+- Avoid claiming that an individual feature caused the prediction
+- Provide one practical business action
+
+The application also includes defensive JSON extraction logic so that valid structured responses can be recovered if the LLM includes additional text around its final JSON output.
 
 ---
 
@@ -255,14 +281,14 @@ This prevents the system from silently inventing model inputs.
 
 ## Business Explanation Layer
 
-After a successful prediction, the application converts the model output into business-facing information.
+After a successful prediction, the application converts the model output into business-facing information using the LLM response-generation layer.
 
 The interface provides:
 
 - Conversion probability
 - Likely / unlikely conversion classification
-- Business summary
-- Recommended action
+- LLM-generated business summary
+- LLM-generated recommended action
 - Model-use disclaimer
 - Expandable structured feature data
 
@@ -272,6 +298,8 @@ For a tested visitor session, the model produced approximately:
 Conversion Probability: 57.99%
 Prediction: Likely to Convert
 ```
+
+The LLM then generated a concise interpretation and recommended business action based on the model result and supplied session information.
 
 The prediction is presented as decision support rather than a guarantee of customer behavior.
 
@@ -293,8 +321,8 @@ The interface allows a user to:
 4. Analyze conversion likelihood
 5. View conversion probability
 6. View the classification result
-7. Read a business-focused interpretation
-8. View a recommended action
+7. Read an LLM-generated business interpretation
+8. View an LLM-generated recommended action
 9. Inspect the extracted model features
 10. Receive clear feedback when required information is missing
 
@@ -310,7 +338,7 @@ Then open the local address displayed by Streamlit.
 
 ## Automated Testing
 
-The project contains automated tests for preprocessing, model behavior, and interface validation.
+The project contains automated tests for preprocessing, model behavior, LLM-powered natural-language parsing, and interface validation.
 
 Test files:
 
@@ -324,7 +352,9 @@ The test suite includes:
 
 - 4 preprocessing tests
 - 2 model tests
-- 2 interface tests
+- 3 interface and LLM integration tests
+
+The interface tests verify valid feature handling, incomplete-input protection, and natural-language feature extraction using a mocked LLM response so the automated test suite does not require a live API call.
 
 Run:
 
@@ -335,7 +365,7 @@ pytest tests/ -v
 Verified result:
 
 ```text
-8 passed
+9 passed
 ```
 
 ---
@@ -574,8 +604,9 @@ This project demonstrates an end-to-end machine learning workflow including:
 - MLflow experiment tracking
 - Metric-driven model selection
 - Model artifact loading
-- LLM integration
+- LLM integration for both feature extraction and response generation
 - Structured natural-language feature extraction
+- Defensive LLM JSON parsing
 - Input validation
 - Graceful handling of incomplete requests
 - Business-focused model interpretation
@@ -583,6 +614,19 @@ This project demonstrates an end-to-end machine learning workflow including:
 - Automated testing
 - Docker containerization
 - Secure API-key management
+- Reproducible model configuration
+
+---
+
+## Reflection
+
+This capstone brought together the full machine learning lifecycle in one application. The biggest lesson was that building a useful ML product requires more than achieving a strong model score. The preprocessing pipeline, experiment tracking, model selection, natural-language interface, validation logic, testing, containerization, and user experience all have to work together reliably.
+
+One of the most challenging parts was integrating the LLM with the predictive model in a way that was both useful and dependable. The LLM needed to extract structured ecommerce features from conversational input without inventing missing values, and it also needed to explain the prediction clearly after the trained model produced a result. Handling incomplete inputs and inconsistent LLM output required additional validation and defensive parsing logic.
+
+Another challenge was balancing model metrics on an imbalanced dataset. Accuracy alone was not sufficient because non-converting sessions represented the majority class. Comparing precision, recall, F1, and ROC-AUC across multiple experiments made the tradeoffs clearer and led to selecting the Random Forest configuration with the strongest F1 score.
+
+With more time, I would expand the application with probability calibration, SHAP-based explanations, feature-importance visualizations, real-time ecommerce event ingestion, CRM integration, model-drift monitoring, and hosted cloud deployment. I would also evaluate whether different classification thresholds improve the business value of the conversion-prioritization workflow.
 
 ---
 

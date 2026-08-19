@@ -10,10 +10,6 @@ from src.app import (
 )
 
 
-# ---------------------------------------------------------
-# Load environment variables
-# ---------------------------------------------------------
-
 load_dotenv()
 
 
@@ -52,6 +48,46 @@ def get_model_name():
         raise ValueError("NEBIUS_MODEL is missing.")
 
     return model_name
+
+
+# ---------------------------------------------------------
+# JSON extraction helper
+# ---------------------------------------------------------
+
+def extract_json_object(text, required_keys=None):
+    """
+    Extract the last valid JSON object from an LLM response.
+
+    This makes the application resilient when a model places
+    explanatory or reasoning text before the final JSON object.
+    """
+
+    required_keys = required_keys or []
+
+    decoder = json.JSONDecoder()
+    valid_objects = []
+
+    for index, character in enumerate(text):
+        if character != "{":
+            continue
+
+        try:
+            obj, _ = decoder.raw_decode(text[index:])
+
+            if isinstance(obj, dict):
+                if all(key in obj for key in required_keys):
+                    valid_objects.append(obj)
+
+        except json.JSONDecodeError:
+            continue
+
+    if not valid_objects:
+        raise ValueError(
+            "No valid JSON object containing the required fields "
+            "was found in the LLM response."
+        )
+
+    return valid_objects[-1]
 
 
 # ---------------------------------------------------------
@@ -138,10 +174,8 @@ Rules:
 1. Never invent values.
 2. If a value is not explicitly provided, return null.
 3. Use the exact field names above.
-4. Return valid JSON only.
-5. Do not include markdown.
-6. Do not include explanations.
-7. Do not add fields that are not in the schema.
+4. Return valid JSON.
+5. Do not add fields that are not in the schema.
 
 User input:
 
@@ -152,7 +186,7 @@ User input:
 
 
 # ---------------------------------------------------------
-# Natural language -> structured features
+# Natural language -> structured model features
 # ---------------------------------------------------------
 
 def parse_user_input(user_text):
@@ -172,9 +206,8 @@ def parse_user_input(user_text):
             {
                 "role": "system",
                 "content": (
-                    "Extract the requested ecommerce features. "
-                    "Return only valid JSON. "
-                    "Never explain your reasoning."
+                    "Extract ecommerce model features from the "
+                    "user input and provide the final result as JSON."
                 ),
             },
             {
@@ -192,13 +225,10 @@ def parse_user_input(user_text):
 
     content = response.choices[0].message.content
 
-    try:
-        parsed = json.loads(content)
-
-    except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"LLM returned invalid JSON: {content}"
-        ) from exc
+    parsed = extract_json_object(
+        content,
+        required_keys=list(FEATURE_SCHEMA.keys()),
+    )
 
     cleaned = {}
 
@@ -211,7 +241,7 @@ def parse_user_input(user_text):
 
 
 # ---------------------------------------------------------
-# Deterministic business explanation
+# LLM-generated business explanation
 # ---------------------------------------------------------
 
 def generate_business_explanation(
@@ -219,9 +249,12 @@ def generate_business_explanation(
     prediction_result,
 ):
     """
-    Generate a reliable business-facing explanation
-    without requiring a second LLM call.
+    Ask the LLM to explain the trained model prediction
+    in concise business language.
     """
+
+    client = get_llm_client()
+    model_name = get_model_name()
 
     probability = prediction_result[
         "conversion_percentage"
@@ -231,87 +264,75 @@ def generate_business_explanation(
         "prediction"
     ]
 
-    visitor_type = features.get(
-        "VisitorType",
-        "the visitor"
+    prompt = f"""
+You are explaining an ecommerce conversion prediction
+to a sales or ecommerce professional.
+
+Prediction:
+{"Likely to Convert" if prediction else "Unlikely to Convert"}
+
+Conversion probability:
+{probability:.2f}%
+
+Structured session features:
+{json.dumps(features, indent=2)}
+
+Create a concise business-facing response.
+
+Return a JSON object containing exactly:
+
+summary
+recommendation
+
+Requirements:
+
+- The summary must state the {probability:.2f}% conversion probability.
+- Explain that the prediction is a model estimate, not a guarantee.
+- Refer only to the supplied session information.
+- Do not claim that an individual feature caused the result.
+- Keep the summary under 70 words.
+- Give one practical ecommerce or sales recommendation.
+- Keep the recommendation under 40 words.
+"""
+
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Generate a concise business explanation of the "
+                    "machine learning prediction. End with a JSON object "
+                    "containing summary and recommendation."
+                ),
+            },
+            {
+                "role": "user",
+                "content": prompt,
+            },
+        ],
+        temperature=0,
+        max_completion_tokens=2500,
+        reasoning_effort="low",
     )
 
-    month = features.get(
-        "Month"
+    content = response.choices[0].message.content
+
+    explanation = extract_json_object(
+        content,
+        required_keys=[
+            "summary",
+            "recommendation",
+        ],
     )
-
-    product_pages = features.get(
-        "ProductRelated"
-    )
-
-    product_duration = features.get(
-        "ProductRelated_Duration"
-    )
-
-    if prediction:
-
-        summary = (
-            f"The model estimates a {probability:.2f}% conversion "
-            "probability for this ecommerce session, indicating that "
-            "the visitor is likely to convert. "
-            "This is a model estimate based on the supplied session "
-            "information and is not a guarantee of actual customer behavior."
-        )
-
-        recommendation = (
-            "Consider prioritizing this session for targeted follow-up, "
-            "personalized messaging, or a relevant ecommerce offer."
-        )
-
-    else:
-
-        summary = (
-            f"The model estimates a {probability:.2f}% conversion "
-            "probability for this ecommerce session, indicating that "
-            "the visitor is unlikely to convert. "
-            "This is a model estimate based on the supplied session "
-            "information and is not a guarantee of actual customer behavior."
-        )
-
-        recommendation = (
-            "Consider using lower-cost nurturing, retargeting, or additional "
-            "engagement before prioritizing this visitor for direct outreach."
-        )
-
-    context_parts = []
-
-    if visitor_type:
-        context_parts.append(
-            f"visitor type: {visitor_type}"
-        )
-
-    if month:
-        context_parts.append(
-            f"month: {month}"
-        )
-
-    if product_pages is not None:
-        context_parts.append(
-            f"product-related pages: {product_pages}"
-        )
-
-    if product_duration is not None:
-        context_parts.append(
-            f"product-related duration: {product_duration} seconds"
-        )
-
-    if context_parts:
-        context = "; ".join(
-            context_parts
-        )
-
-        summary += (
-            f" Session context includes {context}."
-        )
 
     return {
-        "summary": summary,
-        "recommendation": recommendation,
+        "summary": str(
+            explanation["summary"]
+        ).strip(),
+        "recommendation": str(
+            explanation["recommendation"]
+        ).strip(),
     }
 
 
@@ -325,9 +346,9 @@ def analyze_session(user_text):
 
     Natural language
         -> Nebius LLM feature extraction
-        -> validation
+        -> feature validation
         -> trained ML model
-        -> deterministic business explanation
+        -> Nebius LLM business explanation
     """
 
     features = parse_user_input(
@@ -374,7 +395,7 @@ def analyze_session(user_text):
         }
 
     # -----------------------------------------------------
-    # Generate explanation
+    # Generate LLM explanation
     # -----------------------------------------------------
 
     explanation = generate_business_explanation(
