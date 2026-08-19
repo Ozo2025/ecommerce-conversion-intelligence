@@ -31,13 +31,13 @@ Natural-Language Session Description
         Nebius LLM Interface
                 |
                 v
-       Structured Features
+        Structured Features
                 |
                 v
         Feature Validation
                 |
                 v
-      Preprocessing Pipeline
+       Preprocessing Pipeline
                 |
                 v
      Random Forest Classifier
@@ -371,7 +371,7 @@ The Docker build and containerized Streamlit application were successfully teste
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/Ozo2025/ecommerce-conversion-intelligence.git
 cd ecommerce-conversion-intelligence
 ```
 
@@ -443,6 +443,69 @@ before training or running data-dependent scripts.
 
 ---
 
+## Reproducing the Selected Model
+
+The current `configs/config.yaml` is configured to reproduce the selected Random Forest model used by the application.
+
+Selected configuration:
+
+```yaml
+model:
+  type: random_forest
+  n_estimators: 500
+  max_depth: 15
+```
+
+The Random Forest was selected using F1 score as the primary evaluation metric. Among the tested configurations, it achieved the highest F1 score while maintaining strong ROC-AUC performance:
+
+```text
+Accuracy:  0.8779
+Precision: 0.5839
+Recall:    0.7382
+F1 Score:  0.6520
+ROC-AUC:   0.9253
+```
+
+To reproduce the selected model from a fresh environment:
+
+1. Place `online_shoppers_intention.csv` in the `data/` directory.
+2. Create and activate the Python virtual environment.
+3. Install the dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+4. Train the model using the configuration in `configs/config.yaml`:
+
+```bash
+python -m src.train
+```
+
+5. Review the MLflow experiment results:
+
+```bash
+python compare_experiments.py
+```
+
+6. Run the automated test suite:
+
+```bash
+pytest tests/ -v
+```
+
+7. Copy `.env.example` to `.env` and add a valid Nebius API key.
+
+8. Start the application:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+The application loads the highest-F1 completed model from the local `ecommerce_conversion` MLflow experiment. Because MLflow's local database and artifacts are intentionally excluded from Git, a fresh clone must first run the training step before launching the application.
+
+---
+
 ## Project Structure
 
 ```text
@@ -458,7 +521,9 @@ ecommerce-conversion-intelligence/
 |   `-- .gitkeep
 |
 |-- src/
+|   |-- __init__.py
 |   |-- app.py
+|   |-- evaluate.py
 |   |-- llm_interface.py
 |   |-- preprocess.py
 |   `-- train.py

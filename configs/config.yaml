@@ -5,10 +5,10 @@ data:
   random_state: 42
 
 model:
-  type: gradient_boosting
-  n_estimators: 200
-  learning_rate: 0.05
-  max_depth: 3
+  type: random_forest
+  n_estimators: 500
+  max_depth: 15
+  class_weight: balanced
 
 training:
   primary_metric: f1
