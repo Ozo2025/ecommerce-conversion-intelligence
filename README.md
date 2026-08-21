@@ -196,7 +196,7 @@ compare_experiments.py
 
 This script retrieves MLflow experiment results and identifies the strongest run according to F1 score.
 
-The application loads the highest-F1 completed model from the local `ecommerce_conversion` MLflow experiment for prediction.
+The application searches completed MLflow runs in descending F1-score order and loads the highest-performing model artifact that can be successfully loaded. This provides a fallback if a completed MLflow run has an unavailable or incomplete model artifact.
 
 ---
 
@@ -532,7 +532,7 @@ pytest tests/ -v
 streamlit run streamlit_app.py
 ```
 
-The application loads the highest-F1 completed model from the local `ecommerce_conversion` MLflow experiment. Because MLflow's local database and artifacts are intentionally excluded from Git, a fresh clone must first run the training step before launching the application.
+The application searches completed runs from the local `ecommerce_conversion` MLflow experiment in descending F1-score order and loads the highest-performing model artifact that is available. Because MLflow's local database and artifacts are intentionally excluded from Git, a fresh clone must first run the training step before launching the application.
 
 ---
 

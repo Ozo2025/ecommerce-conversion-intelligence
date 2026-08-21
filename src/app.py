@@ -32,9 +32,17 @@ FEATURE_SCHEMA = {
 }
 
 
-def get_best_run():
+# ---------------------------------------------------------
+# MLflow model loading
+# ---------------------------------------------------------
+
+def load_best_model():
     """
-    Find the best completed MLflow run based on F1 score.
+    Load the highest-F1 completed MLflow model that can
+    actually be loaded successfully.
+
+    This makes the application resilient if a completed
+    MLflow run exists but its model artifact is unavailable.
     """
 
     experiment = mlflow.get_experiment_by_name(
@@ -57,26 +65,33 @@ def get_best_run():
             "No completed MLflow runs were found."
         )
 
-    return runs.iloc[0]
+    load_errors = []
 
+    for _, run in runs.iterrows():
+        run_id = run["run_id"]
+        model_uri = f"runs:/{run_id}/model"
 
-def load_best_model():
-    """
-    Load the trained sklearn pipeline from the best MLflow run.
-    """
+        try:
+            model = mlflow.sklearn.load_model(
+                model_uri
+            )
 
-    best_run = get_best_run()
+            return model, run
 
-    run_id = best_run["run_id"]
+        except Exception as error:
+            load_errors.append(
+                f"{run_id}: {error}"
+            )
 
-    model_uri = f"runs:/{run_id}/model"
-
-    model = mlflow.sklearn.load_model(
-        model_uri
+    raise ValueError(
+        "No loadable MLflow model was found. "
+        + " | ".join(load_errors)
     )
 
-    return model, best_run
 
+# ---------------------------------------------------------
+# Feature validation
+# ---------------------------------------------------------
 
 def validate_features(features):
     """
@@ -84,9 +99,9 @@ def validate_features(features):
     and can be converted to the expected data types.
 
     Returns:
-        cleaned_features: validated dictionary
-        missing_features: list of missing feature names
-        errors: list of validation errors
+        cleaned_features
+        missing_features
+        errors
     """
 
     missing_features = []
@@ -96,13 +111,17 @@ def validate_features(features):
     for feature_name, expected_type in FEATURE_SCHEMA.items():
 
         if feature_name not in features:
-            missing_features.append(feature_name)
+            missing_features.append(
+                feature_name
+            )
             continue
 
         value = features[feature_name]
 
         if value is None:
-            missing_features.append(feature_name)
+            missing_features.append(
+                feature_name
+            )
             continue
 
         try:
@@ -137,12 +156,18 @@ def validate_features(features):
                         )
 
                 else:
-                    cleaned_value = bool(value)
+                    cleaned_value = bool(
+                        value
+                    )
 
             else:
-                cleaned_value = expected_type(value)
+                cleaned_value = expected_type(
+                    value
+                )
 
-            cleaned_features[feature_name] = cleaned_value
+            cleaned_features[
+                feature_name
+            ] = cleaned_value
 
         except (ValueError, TypeError):
 
@@ -150,10 +175,21 @@ def validate_features(features):
                 f"{feature_name} has invalid value: {value}"
             )
 
-    return cleaned_features, missing_features, errors
+    return (
+        cleaned_features,
+        missing_features,
+        errors,
+    )
 
 
-def predict_conversion(features, model=None):
+# ---------------------------------------------------------
+# Prediction
+# ---------------------------------------------------------
+
+def predict_conversion(
+    features,
+    model=None,
+):
     """
     Validate ecommerce session features and run the
     trained conversion model.
@@ -161,8 +197,12 @@ def predict_conversion(features, model=None):
     Returns a structured prediction result.
     """
 
-    cleaned_features, missing_features, errors = (
-        validate_features(features)
+    (
+        cleaned_features,
+        missing_features,
+        errors,
+    ) = validate_features(
+        features
     )
 
     if missing_features:
@@ -204,84 +244,46 @@ def predict_conversion(features, model=None):
 
     return {
         "success": True,
-        "prediction": bool(prediction),
-        "conversion_probability": float(probability),
+        "prediction": bool(
+            prediction
+        ),
+        "conversion_probability": float(
+            probability
+        ),
         "conversion_percentage": float(
             probability * 100
         ),
     }
 
 
-def test_prediction():
+# ---------------------------------------------------------
+# Optional direct test
+# ---------------------------------------------------------
+
+def test_model_loading():
     """
-    Verify prediction and edge-case handling.
+    Verify that a loadable MLflow model can be found.
     """
 
-    model, best_run = load_best_model()
+    model, run = load_best_model()
 
-    print("\nBest Model Loaded")
+    print("\nBest Loadable Model")
     print("=" * 50)
-
     print(
-        f"Run ID:    {best_run['run_id']}"
+        f"Run ID: {run['run_id']}"
     )
-
     print(
-        f"Model:     "
-        f"{best_run.get('params.type', 'Unknown')}"
+        f"Model: {run.get('params.type', 'Unknown')}"
     )
-
     print(
-        f"F1 Score:  "
-        f"{best_run['metrics.f1']:.4f}"
+        f"F1 Score: {float(run['metrics.f1']):.4f}"
     )
-
     print(
-        f"ROC-AUC:   "
-        f"{best_run['metrics.roc_auc']:.4f}"
+        f"ROC-AUC: {float(run['metrics.roc_auc']):.4f}"
     )
 
-    # -----------------------------------------------------
-    # Load one real ecommerce session
-    # -----------------------------------------------------
-
-    df = pd.read_csv(
-        "data/online_shoppers_intention.csv"
-    )
-
-    sample = df.drop(
-        columns=["Revenue"]
-    ).iloc[0].to_dict()
-
-    result = predict_conversion(
-        sample,
-        model=model
-    )
-
-    print("\nValid Prediction Test")
-    print("=" * 50)
-    print(result)
-
-    # -----------------------------------------------------
-    # Test missing information
-    # -----------------------------------------------------
-
-    incomplete_sample = {
-        "ProductRelated": 15,
-        "ProductRelated_Duration": 500.0,
-        "Month": "Nov",
-        "VisitorType": "Returning_Visitor",
-    }
-
-    incomplete_result = predict_conversion(
-        incomplete_sample,
-        model=model
-    )
-
-    print("\nIncomplete Input Test")
-    print("=" * 50)
-    print(incomplete_result)
+    return model, run
 
 
 if __name__ == "__main__":
-    test_prediction()
+    test_model_loading()
