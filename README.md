@@ -6,6 +6,22 @@ The project combines traditional machine learning, MLflow experiment tracking, n
 
 ---
 
+## 🎥 Project Demo
+
+Watch a short demonstration of the Ecommerce Conversion Intelligence application:
+
+**[▶ Watch the Ecommerce Conversion Intelligence Demo](https://go.screenpal.com/watch/cOj0FUnv9Wb)**
+
+The demo shows:
+
+- A user describing an ecommerce session in natural language
+- The LLM parsing the session into structured model features
+- The trained Random Forest model generating a conversion prediction
+- The LLM generating a business-facing summary and recommendation
+- The application safely handling an incomplete user request
+
+---
+
 ## Business Problem
 
 Ecommerce teams collect large amounts of behavioral session data, but converting those signals into actionable sales intelligence can be difficult.
